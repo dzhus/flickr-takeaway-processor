@@ -62,8 +62,8 @@ instance FromJSON Privacy where
     withText "Privacy" $
     \case
       "friend & family" -> return FriendsAndFamily
-      "public"          -> return Public
       "private"         -> return Private
+      "public"          -> return Public
       _                 -> fail "Unexpected privacy value"
 
 data PhotoMeta = PhotoMeta
