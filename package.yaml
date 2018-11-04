@@ -10,11 +10,31 @@ category:            Web
 extra-source-files:
 - README.md
 
+default-extensions:
+  - DeriveGeneric
+  - DuplicateRecordFields
+  - NoImplicitPrelude
+  - OverloadedStrings
+  - RecordWildCards
+
+ghc-options:
+  - -Wall
+  - -Wcompat
+  - -O2
+
 dependencies:
   - base >= 4.7 && < 5
+  - aeson
+  - classy-prelude
+  - foldl
+  - text
   - turtle
 
 executables:
   flickr-takeaway-processor:
     source-dirs:      src
     main:             Main.hs
+    ghc-options: &ghc-options-exe
+      - -threaded
+      - -rtsopts
+      - '"-with-rtsopts=-N -T"'
