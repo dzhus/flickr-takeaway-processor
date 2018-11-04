@@ -2,14 +2,15 @@
 
 module Main where
 
-import ClassyPrelude hiding (FilePath)
-import Control.Monad.Logger
-import Data.Aeson as A hiding (Options)
-import Data.Text.Read
-import Turtle hiding (o)
+import           ClassyPrelude           hiding ( FilePath )
+import           Control.Monad.Logger
+import           Data.Aeson                    as A
+                                         hiding ( Options )
+import           Data.Text.Read
+import           Turtle                  hiding ( o )
 
-import qualified Control.Foldl as Fold
-import qualified Data.Text as T
+import qualified Control.Foldl                 as Fold
+import qualified Data.Text                     as T
 
 data Options = Options
   { metaDir  :: FilePath
@@ -80,9 +81,10 @@ data PhotoMeta = PhotoMeta
 instance FromJSON PhotoMeta
 
 optParser :: Parser Options
-optParser = Options
-  <$> argPath "meta" "Directory containing photo_*.json files"
-  <*> argPath "media" "Directory with media files"
+optParser =
+  Options
+    <$> argPath "meta"  "Directory containing photo_*.json files"
+    <*> argPath "media" "Directory with media files"
 
 parseSidecar :: MonadIO m => FilePath -> m (Maybe PhotoMeta)
 parseSidecar jf = do
@@ -91,8 +93,8 @@ parseSidecar jf = do
 
 main :: IO ()
 main = runStdoutLoggingT $ do
-  Options{..} <- options "Process Flickr takeaway files" optParser
-  files <- flip Turtle.fold Fold.list $ do
+  Options {..} <- options "Process Flickr takeaway files" optParser
+  files        <- flip Turtle.fold Fold.list $ do
     pushd metaDir
     Turtle.find (contains "photo_" *> suffix ".json") =<< pwd
   $logInfo $ format (d % " sidecar .json files found") (length files)
