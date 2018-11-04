@@ -1,0 +1,20 @@
+name:                flickr-takeaway-processor
+version:             0.1.0.0
+synopsis:            Process Flickr takeaway media files
+homepage:            https://github.com/dzhus/flickr-takeaway-processor#readme
+license:             BSD3
+author:              Dmitry Dzhus
+maintainer:          dima@dzhus.org
+copyright:           2018 Dmitry Dzhus
+category:            Web
+extra-source-files:
+- README.md
+
+dependencies:
+  - base >= 4.7 && < 5
+  - turtle
+
+executables:
+  flickr-takeaway-processor:
+    source-dirs:      src
+    main:             Main.hs
