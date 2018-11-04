@@ -1,11 +1,15 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module Main where
 
 import ClassyPrelude hiding (FilePath)
+import Control.Monad.Logger
 import Data.Aeson as A hiding (Options)
-import qualified Data.Text as T
 import Data.Text.Read
-import qualified Control.Foldl as Fold
 import Turtle hiding (o)
+
+import qualified Control.Foldl as Fold
+import qualified Data.Text as T
 
 data Options = Options
   { metaDir  :: FilePath
@@ -49,6 +53,18 @@ newtype Album = Album { unwrap :: Text }
 instance FromJSON Album where
   parseJSON = withObject "Album" $ \o -> Album <$> (o .: "title")
 
+data Privacy = Public | FriendsAndFamily | Private
+  deriving (Eq, Show)
+
+instance FromJSON Privacy where
+  parseJSON =
+    withText "Privacy" $
+    \case
+      "friend & family" -> return FriendsAndFamily
+      "public"          -> return Public
+      "private"         -> return Private
+      _                 -> fail "Unexpected privacy value"
+
 data PhotoMeta = PhotoMeta
   { id          :: Text
   , date_taken  :: SpacedUTCTime
@@ -57,6 +73,7 @@ data PhotoMeta = PhotoMeta
   , geo         :: Maybe Geo
   , albums      :: [Album]
   , tags        :: [Tag]
+  , privacy     :: Privacy
   }
   deriving (Generic, Show)
 
@@ -73,12 +90,12 @@ parseSidecar jf = do
   return $ decode $ fromStrict res
 
 main :: IO ()
-main = do
+main = runStdoutLoggingT $ do
   Options{..} <- options "Process Flickr takeaway files" optParser
   files <- flip Turtle.fold Fold.list $ do
     pushd metaDir
     Turtle.find (contains "photo_" *> suffix ".json") =<< pwd
-  print $ headMay files
+  $logInfo $ format (d % " sidecar .json files found") (length files)
   jsons <- mapConcurrently parseSidecar files
-  print $ length $ catMaybes jsons
+  print $ length $ filter ((/= Public) . privacy) $ catMaybes jsons
   print $ headMay jsons
