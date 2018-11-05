@@ -3,7 +3,9 @@
 
 module Main where
 
-import           ClassyPrelude           hiding ( FilePath, id )
+import           ClassyPrelude           hiding ( FilePath
+                                                , id
+                                                )
 import           Control.Concurrent.Async.Pool as Pool
 import           Control.Monad.Logger
 import           Data.Aeson                    as A
@@ -107,35 +109,38 @@ parseSidecar jf = do
   res <- liftIO $ ClassyPrelude.readFile $ encodeString jf
   return $ decode $ fromStrict res
 
-findFile :: MonadIO m
-         => FilePath
-         -- ^ Directory to look for file in.
-         -> PhotoMeta
-         -> m (Maybe FilePath)
-findFile mediaDir PhotoMeta{..} =
-  fmap headMay $
-  foldAsList $ Turtle.find (contains $ text $ id <> "_o") mediaDir
+findFile
+  :: MonadIO m
+  => FilePath
+  -- ^ Directory to look for file in.
+  -> PhotoMeta
+  -> m (Maybe FilePath)
+findFile mediaDir PhotoMeta {..} = fmap headMay $ foldAsList $ Turtle.find
+  (contains $ text $ id <> "_o")
+  mediaDir
 
 exiv2Commands :: PhotoMeta -> [Text]
-exiv2Commands PhotoMeta{..} =
-  [ "-M", "set Iptc.Application2.Headline String " <> name
+exiv2Commands PhotoMeta {..} =
+  [ "-M"
+  , "set Iptc.Application2.Headline String " <> name
   -- , "-M", "set Iptc.Application2.Caption String " <> description
-  , "-M", "set Exif.Photo.DateTimeOriginal Ascii " <> timestamp
+  , "-M"
+  , "set Exif.Photo.DateTimeOriginal Ascii " <> timestamp
   ]
-  where
-    timestamp =
-      pack $
-      formatTime defaultTimeLocale (iso8601DateFormat $ Just "%H:%M:%S") $
-      unwrap date_taken
+ where
+  timestamp =
+    pack
+      $ formatTime defaultTimeLocale (iso8601DateFormat $ Just "%H:%M:%S")
+      $ unwrap date_taken
 
 
 embedSidecar :: PhotoMeta -> FilePath -> IO (Maybe Int)
 embedSidecar pm photoPath =
-  try (sh $ inproc "exiv2" (exiv2Commands pm <> [showF photoPath]) empty) >>=
-  \case
-    Right _              -> return Nothing
-    Left (ExitFailure n) -> return $ Just n
-    Left ExitSuccess     -> error "embedSidecar: exception on exiv2 success"
+  try (sh $ inproc "exiv2" (exiv2Commands pm <> [showF photoPath]) empty)
+    >>= \case
+          Right _ -> return Nothing
+          Left (ExitFailure n) -> return $ Just n
+          Left ExitSuccess -> error "embedSidecar: exception on exiv2 success"
 
 data ProcessingError = FileNotFound
                      | Exiv2Failure Int
@@ -149,12 +154,13 @@ main = runStdoutLoggingT $ do
     Turtle.find (contains "photo_" *> suffix ".json") =<< pwd
   $logInfo $ format (d % " sidecar .json files found") (length sidecars)
   jsons <- liftIO $ forConcurrentlyN 20 sidecars parseSidecar
-  res <- liftIO $ forConcurrentlyN 20 (take 20 $ catMaybes jsons) $ \sc -> (sc,) <$> do
-    findFile mediaDir sc >>=
-      \case
-        Nothing -> return $ Just FileNotFound
-        Just f -> embedSidecar sc f >>=
-                  \case
-                    Just err -> return $ Just $ Exiv2Failure err
-                    Nothing  -> return Nothing
+  res   <-
+    liftIO
+    $ forConcurrentlyN 20 (take 20 $ catMaybes jsons)
+    $ \sc -> (sc, ) <$> do
+        findFile mediaDir sc >>= \case
+          Nothing -> return $ Just FileNotFound
+          Just f  -> embedSidecar sc f >>= \case
+            Just err -> return $ Just $ Exiv2Failure err
+            Nothing  -> return Nothing
   print $ take 5 res
