@@ -1,11 +1,14 @@
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Main where
 
-import           ClassyPrelude           hiding ( FilePath )
+import           ClassyPrelude           hiding ( FilePath, id )
+import           Control.Concurrent.Async.Pool as Pool
 import           Control.Monad.Logger
 import           Data.Aeson                    as A
                                          hiding ( Options )
+import           Data.Time.Format
 import           Data.Text.Read
 import           Turtle                  hiding ( o )
 
@@ -42,13 +45,13 @@ instance FromJSON Geo where
                    Right (num, _) -> return $ num / 1e6
                    _              -> fail "Could not read Geo components"
 
-newtype Tag = Tag { unwrap :: Text }
+newtype Tag = Tag Text
   deriving Show
 
 instance FromJSON Tag where
   parseJSON = withObject "Tag" $ \o -> Tag <$> (o .: "tag")
 
-newtype Album = Album { unwrap :: Text }
+newtype Album = Album Text
   deriving Show
 
 instance FromJSON Album where
@@ -80,6 +83,19 @@ data PhotoMeta = PhotoMeta
 
 instance FromJSON PhotoMeta
 
+showF :: FilePath -> Text
+showF = pack . encodeString
+
+foldAsList :: MonadIO m => Shell a -> m [a]
+foldAsList act = Turtle.fold act Fold.list
+
+mapConcurrentlyN :: Traversable t => Int -> (a -> IO b) -> t a -> IO (t b)
+mapConcurrentlyN n act inputs =
+  withTaskGroup n $ \tg -> Pool.mapConcurrently tg act inputs
+
+forConcurrentlyN :: Traversable t => Int -> t a -> (a -> IO b) -> IO (t b)
+forConcurrentlyN n inputs act = mapConcurrentlyN n act inputs
+
 optParser :: Parser Options
 optParser =
   Options
@@ -91,13 +107,54 @@ parseSidecar jf = do
   res <- liftIO $ ClassyPrelude.readFile $ encodeString jf
   return $ decode $ fromStrict res
 
+findFile :: MonadIO m
+         => FilePath
+         -- ^ Directory to look for file in.
+         -> PhotoMeta
+         -> m (Maybe FilePath)
+findFile mediaDir PhotoMeta{..} =
+  fmap headMay $
+  foldAsList $ Turtle.find (contains $ text $ id <> "_o") mediaDir
+
+exiv2Commands :: PhotoMeta -> [Text]
+exiv2Commands PhotoMeta{..} =
+  [ "-M", "set Iptc.Application2.Headline String " <> name
+  -- , "-M", "set Iptc.Application2.Caption String " <> description
+  , "-M", "set Exif.Photo.DateTimeOriginal Ascii " <> timestamp
+  ]
+  where
+    timestamp =
+      pack $
+      formatTime defaultTimeLocale (iso8601DateFormat $ Just "%H:%M:%S") $
+      unwrap date_taken
+
+
+embedSidecar :: PhotoMeta -> FilePath -> IO (Maybe Int)
+embedSidecar pm photoPath =
+  try (sh $ inproc "exiv2" (exiv2Commands pm <> [showF photoPath]) empty) >>=
+  \case
+    Right _              -> return Nothing
+    Left (ExitFailure n) -> return $ Just n
+    Left ExitSuccess     -> error "embedSidecar: exception on exiv2 success"
+
+data ProcessingError = FileNotFound
+                     | Exiv2Failure Int
+                     deriving Show
+
 main :: IO ()
 main = runStdoutLoggingT $ do
   Options {..} <- options "Process Flickr takeaway files" optParser
-  files        <- flip Turtle.fold Fold.list $ do
+  sidecars     <- foldAsList $ do
     pushd metaDir
     Turtle.find (contains "photo_" *> suffix ".json") =<< pwd
-  $logInfo $ format (d % " sidecar .json files found") (length files)
-  jsons <- mapConcurrently parseSidecar files
-  print $ length $ filter ((/= Public) . privacy) $ catMaybes jsons
-  print $ headMay jsons
+  $logInfo $ format (d % " sidecar .json files found") (length sidecars)
+  jsons <- liftIO $ forConcurrentlyN 20 sidecars parseSidecar
+  res <- liftIO $ forConcurrentlyN 20 (take 20 $ catMaybes jsons) $ \sc -> (sc,) <$> do
+    findFile mediaDir sc >>=
+      \case
+        Nothing -> return $ Just FileNotFound
+        Just f -> embedSidecar sc f >>=
+                  \case
+                    Just err -> return $ Just $ Exiv2Failure err
+                    Nothing  -> return Nothing
+  print $ take 5 res

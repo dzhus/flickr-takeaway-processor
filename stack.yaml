@@ -1,3 +1,6 @@
 resolver: lts-12.16
 packages:
 - .
+extra-deps:
+- git: https://github.com/jwiegley/async-pool.git
+  commit: 17c34fb0b533ac764027cd51fc29e664dc450ac3
