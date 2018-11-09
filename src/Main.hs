@@ -22,13 +22,13 @@ data Options = Options
   , mediaDir :: FilePath
   }
 
-newtype SpacedUTCTime = SpacedUTCTime { unwrap :: UTCTime }
+newtype FlickrUTCTime = FlickrUTCTime { unwrap :: UTCTime }
   deriving (Show)
 
-instance FromJSON SpacedUTCTime where
+instance FromJSON FlickrUTCTime where
   parseJSON =
-    withText "SpacedUTCTime" $
-    fmap SpacedUTCTime . parseJSON . String .
+    withText "FlickrUTCTime" $
+    fmap FlickrUTCTime . parseJSON . String .
     -- Flickr sidecars contain no T separator and no timezone
     T.replace " " "T" . (<> "Z")
 
@@ -73,7 +73,7 @@ instance FromJSON Privacy where
 
 data PhotoMeta = PhotoMeta
   { id          :: Text
-  , date_taken  :: SpacedUTCTime
+  , date_taken  :: FlickrUTCTime
   , description :: Text
   , name        :: Text
   , geo         :: Maybe Geo
