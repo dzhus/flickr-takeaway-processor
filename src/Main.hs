@@ -3,7 +3,8 @@
 
 module Main where
 
-import           ClassyPrelude           hiding ( FilePath
+import           ClassyPrelude                 as P
+                                         hiding ( FilePath
                                                 , id
                                                 )
 import           Control.Concurrent.Async.Extra
@@ -23,7 +24,7 @@ data Options = Options
   }
 
 newtype FlickrUTCTime = FlickrUTCTime { unwrap :: UTCTime }
-  deriving (Show)
+  deriving Show
 
 instance FromJSON FlickrUTCTime where
   parseJSON =
@@ -103,18 +104,16 @@ optParser =
 
 parseSidecar :: MonadIO m => FilePath -> m (Maybe PhotoMeta)
 parseSidecar jf = do
-  res <- liftIO $ ClassyPrelude.readFile $ encodeString jf
+  res <- liftIO $ P.readFile $ encodeString jf
   return $ decode $ fromStrict res
 
 findFile
-  :: MonadIO m
-  => FilePath
-  -- ^ Directory to look for file in.
+  :: [FilePath]
+  -- ^ List of files to look for the photo in.
   -> PhotoMeta
-  -> m (Maybe FilePath)
-findFile mediaDir PhotoMeta {..} = fmap headMay $ foldAsList $ Turtle.find
-  (contains $ text $ id <> "_o")
-  mediaDir
+  -> Maybe FilePath
+findFile mediaDir PhotoMeta {..} =
+  P.find (((id <> "_o") `isInfixOf`) . showF) mediaDir
 
 exiv2Commands :: PhotoMeta -> [Text]
 exiv2Commands PhotoMeta {..} =
@@ -130,10 +129,11 @@ exiv2Commands PhotoMeta {..} =
       $ formatTime defaultTimeLocale (iso8601DateFormat $ Just "%H:%M:%S")
       $ unwrap date_taken
 
-
-embedSidecar :: PhotoMeta -> FilePath -> IO (Maybe Int)
-embedSidecar pm photoPath =
-  try (sh $ inproc "exiv2" (exiv2Commands pm <> [showF photoPath]) empty)
+embedSidecar
+  :: (MonadUnliftIO m, MonadLogger m) => PhotoMeta -> FilePath -> m (Maybe Int)
+embedSidecar pm photoPath = do
+  $logDebug $ "embedSidecar: " <> showF photoPath
+  try (sh $ inprocWithErr "exiv2" (exiv2Commands pm <> [showF photoPath]) empty)
     >>= \case
           Right _ -> return Nothing
           Left (ExitFailure n) -> return $ Just n
@@ -150,14 +150,12 @@ main = runStdoutLoggingT $ do
     pushd metaDir
     Turtle.find (contains "photo_" *> suffix ".json") =<< pwd
   $logInfo $ format (d % " sidecar .json files found") (length sidecars)
-  jsons <- liftIO $ forConcurrentlyN 20 sidecars parseSidecar
-  res   <-
-    liftIO
-    $ forConcurrentlyN 10 (catMaybes jsons)
-    $ \sc -> (sc, ) <$> do
-        findFile mediaDir sc >>= \case
-          Nothing -> return $ Just FileNotFound
-          Just f  -> embedSidecar sc f >>= \case
-            Just err -> return $ Just $ Exiv2Failure err
-            Nothing  -> return Nothing
-  print $ take 5 res
+  jsons      <- liftIO $ forConcurrentlyN 10 sidecars parseSidecar
+  mediaFiles <- foldAsList $ Turtle.ls mediaDir
+  res        <- forConcurrentlyN 5 (catMaybes jsons) $ \sc -> (sc, ) <$> do
+    case findFile mediaFiles sc of
+      Nothing -> return $ Just FileNotFound
+      Just f  -> embedSidecar sc f >>= \case
+        Just err -> return $ Just $ Exiv2Failure err
+        Nothing  -> return Nothing
+  print $ filter (isJust . snd) res
