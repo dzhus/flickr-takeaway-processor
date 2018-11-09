@@ -6,7 +6,7 @@ module Main where
 import           ClassyPrelude           hiding ( FilePath
                                                 , id
                                                 )
-import           Control.Concurrent.Async.Pool as Pool
+import           Control.Concurrent.Async.Extra
 import           Control.Monad.Logger
 import           Data.Aeson                    as A
                                          hiding ( Options )
@@ -91,12 +91,9 @@ showF = pack . encodeString
 foldAsList :: MonadIO m => Shell a -> m [a]
 foldAsList act = Turtle.fold act Fold.list
 
-mapConcurrentlyN :: Traversable t => Int -> (a -> IO b) -> t a -> IO (t b)
-mapConcurrentlyN n act inputs =
-  withTaskGroup n $ \tg -> Pool.mapConcurrently tg act inputs
-
-forConcurrentlyN :: Traversable t => Int -> t a -> (a -> IO b) -> IO (t b)
-forConcurrentlyN n inputs act = mapConcurrentlyN n act inputs
+forConcurrentlyN
+  :: (MonadUnliftIO m, Traversable t) => Int -> t a -> (a -> m b) -> m (t b)
+forConcurrentlyN n inputs act = mapConcurrentlyBounded n act inputs
 
 optParser :: Parser Options
 optParser =
@@ -156,7 +153,7 @@ main = runStdoutLoggingT $ do
   jsons <- liftIO $ forConcurrentlyN 20 sidecars parseSidecar
   res   <-
     liftIO
-    $ forConcurrentlyN 20 (take 20 $ catMaybes jsons)
+    $ forConcurrentlyN 10 (catMaybes jsons)
     $ \sc -> (sc, ) <$> do
         findFile mediaDir sc >>= \case
           Nothing -> return $ Just FileNotFound

@@ -2,5 +2,5 @@ resolver: lts-12.16
 packages:
 - .
 extra-deps:
-- git: https://github.com/jwiegley/async-pool.git
-  commit: 17c34fb0b533ac764027cd51fc29e664dc450ac3
+- git: https://github.com/agrafix/async-extra.git
+  commit: 5d160053421b7748da331cd25c50db2b90032354
