@@ -119,7 +119,8 @@ findFile
   -> PhotoMeta
   -> Maybe FilePath
 findFile mediaFiles PhotoMeta {..} =
-  P.find (((id <> "_o") `isInfixOf`) . showF) mediaFiles
+  P.find (((id <> "_o") `isInfixOf`) . showF) mediaFiles <|>
+  P.find           ((id `isInfixOf`) . showF) mediaFiles
 
 -- | If the file name has a leading dash, produce a new one.
 fixedFilename :: FilePath -> Maybe FilePath
