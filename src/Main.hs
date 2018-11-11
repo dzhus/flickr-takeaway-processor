@@ -12,6 +12,8 @@ import           Control.Concurrent.Async.Extra
 import           Control.Monad.Logger
 import           Data.Aeson                    as A
                                          hiding ( Options )
+
+import           Data.List.Split
 import           Data.Time.Format
 import           Data.Text.Read
 import           Turtle                  hiding ( f
@@ -175,17 +177,18 @@ exiftoolOptions =
 
 main :: IO ()
 main = runStdoutLoggingT $ do
+  let maxThreads = 10
   Options {..} <- options "Process Flickr takeaway files" optParser
   jsons        <- foldAsList
     $ Turtle.find (contains "photo_" *> suffix ".json") metaDir
-  sidecars <- catMaybes <$> forConcurrentlyN 10 jsons parseSidecar
+  sidecars <- catMaybes <$> forConcurrentlyN maxThreads jsons parseSidecar
   $logInfo $ format (d % "/" % d % " sidecar .json files parsed")
                     (length sidecars)
                     (length jsons)
 
   foldAsList (Turtle.ls mediaDir) >>= \originalMediaFiles -> do
     moveResults <- fmap (length . filter (== True)) $
-                   forConcurrentlyN 10 sidecars $
+                   forConcurrentlyN maxThreads sidecars $
                    renameMoveFile originalMediaFiles
     when (moveResults > 0) $
       $logInfo $ format ("Renamed " % d % " files") moveResults
@@ -201,9 +204,11 @@ main = runStdoutLoggingT $ do
     (length $ lefts res)
 
   $logInfo $ format ("Writing tags for " % d % " files") (length $ rights res)
-  liftIO $ runManaged $ do
-    (fp, tf) <- mktemp "." "exiftool.json"
-    P.hPut tf $ toStrict $ encode $ map snd $ rights res
-    sh $ inproc "exiftool"
-      (["-j+=" <> showF fp] <> exiftoolOptions <> ["-@", "-"])
-      (select $ mapMaybe (textToLine . showF . fst) $ rights res)
+  let splitRes = chunksOf (length (rights res) `div` maxThreads) (rights res)
+  void $ forConcurrentlyN maxThreads splitRes $ \exiftoolBatch ->
+    liftIO $ runManaged $ do
+      (fp, tf) <- mktemp "." "exiftool.json"
+      P.hPut tf $ toStrict $ encode $ map snd exiftoolBatch
+      sh $ inproc "exiftool"
+        (["-j+=" <> showF fp] <> exiftoolOptions <> ["-@", "-"])
+        (select $ mapMaybe (textToLine . showF . fst) exiftoolBatch)
