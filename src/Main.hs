@@ -126,29 +126,41 @@ findFile mediaFiles PhotoMeta {..} =
   P.find (((id <> "_o") `isInfixOf`) . showF) mediaFiles <|>
   P.find           ((id `isInfixOf`) . showF) mediaFiles
 
--- | If the file name has a leading dash, produce a new one.
-fixedFilename :: FilePath -> Maybe FilePath
-fixedFilename fp = case unpack $ showF fp of
-  '-' : _ ->
-    Just $ decodeString $ unpack $ "photo" <> T.dropWhile (== '-') (showF fp)
-  _ -> Nothing
+albumFilename :: PhotoMeta -> FilePath -> Maybe FilePath
+albumFilename PhotoMeta {..} fp =
+  case headMay albums of
+    Just (Album a) ->
+      if fromText a `elem` splitDirectories fp
+      then Nothing
+      else Just $ directory fp <> fromText a <> filename fp
+    Nothing -> Nothing
 
--- | Rename the photo if its filename has a leading dash.
-renameMoveFile
+-- | If the file name has a leading dash, produce a new one.
+fixedFilename :: PhotoMeta -> FilePath -> Maybe FilePath
+fixedFilename sc fp = case unpack $ showF fp of
+  '-' : _ ->
+    albumFilename sc newName <|> Just newName
+    where
+      newName = fromText $ "photo" <> T.dropWhile (== '-') (showF fp)
+  _ -> albumFilename sc fp
+
+-- | Move/rename the photo if needed and return new path.
+renameFile
   :: MonadLoggerIO m
   => [FilePath]
   -- ^ List of files to look for the photo in.
   -> PhotoMeta
-  -> m Bool
-renameMoveFile mediaFiles pm@PhotoMeta {..} = case findFile mediaFiles pm of
-  Nothing  -> return False
-  Just sth -> case fixedFilename $ filename sth of
+  -> m (Maybe FilePath)
+renameFile mediaFiles pm@PhotoMeta {..} = case findFile mediaFiles pm of
+  Nothing  -> return Nothing
+  Just sth -> case fixedFilename pm $ filename sth of
     Just newFilename -> do
       let newPath = directory sth <> newFilename
       $logDebug $ "Moving " <> showF sth <> " to " <> showF newPath
+      mktree (directory newPath)
       mv sth newPath
-      return True
-    _ -> return False
+      return $ Just newPath
+    _ -> return Nothing
 
 makeExiftoolTags :: PhotoMeta -> FilePath -> Map Text Text
 makeExiftoolTags PhotoMeta {..} photoPath = mapFromList
@@ -188,13 +200,15 @@ main = runStdoutLoggingT $ do
                     (length jsons)
 
   foldAsList (Turtle.ls mediaDir) >>= \originalMediaFiles -> do
-    moveResults <- fmap (length . filter (== True)) $
+    moveResults <- fmap (length . filter isJust) $
                    forConcurrentlyN maxThreads sidecars $
-                   renameMoveFile originalMediaFiles
+                   renameFile originalMediaFiles
     when (moveResults > 0) $
       $logInfo $ format ("Renamed " % d % " files") moveResults
 
-  mediaFiles <- foldAsList $ Turtle.ls mediaDir
+  -- Include files which may have been moved to album subdirectories
+  -- already
+  mediaFiles <- foldAsList $ Turtle.lsdepth 1 2 mediaDir
   res        <- forConcurrently sidecars $ \sc ->
     return $ case findFile mediaFiles sc of
       Nothing -> Left FileNotFound
