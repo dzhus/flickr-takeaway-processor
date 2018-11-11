@@ -7,13 +7,17 @@ import           ClassyPrelude                 as P
                                          hiding ( FilePath
                                                 , id
                                                 )
+
 import           Control.Concurrent.Async.Extra
 import           Control.Monad.Logger
 import           Data.Aeson                    as A
                                          hiding ( Options )
 import           Data.Time.Format
 import           Data.Text.Read
-import           Turtle                  hiding ( o )
+import           Turtle                  hiding ( f
+                                                , fp
+                                                , o
+                                                )
 
 import qualified Control.Foldl                 as Fold
 import qualified Data.Text                     as T
@@ -72,6 +76,7 @@ instance FromJSON Privacy where
       "public"          -> return Public
       _                 -> fail "Unexpected privacy value"
 
+-- | Flickr sidecar JSON structure.
 data PhotoMeta = PhotoMeta
   { id          :: Text
   , date_taken  :: FlickrUTCTime
@@ -107,21 +112,46 @@ parseSidecar jf = do
   res <- liftIO $ P.readFile $ encodeString jf
   return $ decode $ fromStrict res
 
+-- | Return path to the photo file the sidecar corresponds to.
 findFile
   :: [FilePath]
   -- ^ List of files to look for the photo in.
   -> PhotoMeta
   -> Maybe FilePath
-findFile mediaDir PhotoMeta {..} =
-  P.find (((id <> "_o") `isInfixOf`) . showF) mediaDir
+findFile mediaFiles PhotoMeta {..} =
+  P.find (((id <> "_o") `isInfixOf`) . showF) mediaFiles
 
-exiv2Commands :: PhotoMeta -> [Text]
-exiv2Commands PhotoMeta {..} =
-  [ "-M"
-  , "set Iptc.Application2.Headline String " <> name
-  -- , "-M", "set Iptc.Application2.Caption String " <> description
-  , "-M"
-  , "set Exif.Photo.DateTimeOriginal Ascii " <> timestamp
+-- | If the file name has a leading dash, produce a new one.
+fixedFilename :: FilePath -> Maybe FilePath
+fixedFilename fp = case unpack $ showF fp of
+  '-' : _ ->
+    Just $ decodeString $ unpack $ "photo" <> T.dropWhile (== '-') (showF fp)
+  _ -> Nothing
+
+-- | Rename the photo if its filename has a leading dash.
+renameMoveFile
+  :: MonadLoggerIO m
+  => [FilePath]
+  -- ^ List of files to look for the photo in.
+  -> PhotoMeta
+  -> m Bool
+renameMoveFile mediaFiles pm@PhotoMeta {..} = case findFile mediaFiles pm of
+  Nothing  -> return False
+  Just sth -> case fixedFilename $ filename sth of
+    Just newFilename -> do
+      let newPath = directory sth <> newFilename
+      $logDebug $ "Moving " <> showF sth <> " to " <> showF newPath
+      mv sth newPath
+      return True
+    _ -> return False
+
+makeExiftoolTags :: PhotoMeta -> FilePath -> Map Text Text
+makeExiftoolTags PhotoMeta {..} photoPath = mapFromList
+  [ ("ImageDescription", T.strip description)
+  , ("Headline"        , T.strip name)
+  , ("DateTimeOriginal", timestamp)
+  , ("SourceFile"      , showF photoPath)
+  , ("CodedCharacterSet", "UTF-8")
   ]
  where
   timestamp =
@@ -129,33 +159,50 @@ exiv2Commands PhotoMeta {..} =
       $ formatTime defaultTimeLocale (iso8601DateFormat $ Just "%H:%M:%S")
       $ unwrap date_taken
 
-embedSidecar
-  :: (MonadUnliftIO m, MonadLogger m) => PhotoMeta -> FilePath -> m (Maybe Int)
-embedSidecar pm photoPath = do
-  $logDebug $ "embedSidecar: " <> showF photoPath
-  try (sh $ inprocWithErr "exiv2" (exiv2Commands pm <> [showF photoPath]) empty)
-    >>= \case
-          Right _ -> return Nothing
-          Left (ExitFailure n) -> return $ Just n
-          Left ExitSuccess -> error "embedSidecar: exception on exiv2 success"
-
 data ProcessingError = FileNotFound
                      | Exiv2Failure Int
                      deriving Show
 
+exiftoolOptions :: [Text]
+exiftoolOptions =
+  [ "-charset"
+  , "exif=UTF-8"
+  , "-charset"
+  , "iptc=UTF-8"
+  , "-overwrite_original_in_place"
+  ]
+
 main :: IO ()
 main = runStdoutLoggingT $ do
   Options {..} <- options "Process Flickr takeaway files" optParser
-  sidecars     <- foldAsList $ do
-    pushd metaDir
-    Turtle.find (contains "photo_" *> suffix ".json") =<< pwd
-  $logInfo $ format (d % " sidecar .json files found") (length sidecars)
-  jsons      <- liftIO $ forConcurrentlyN 10 sidecars parseSidecar
+  jsons        <- foldAsList
+    $ Turtle.find (contains "photo_" *> suffix ".json") metaDir
+  sidecars <- catMaybes <$> forConcurrentlyN 10 jsons parseSidecar
+  $logInfo $ format (d % "/" % d % " sidecar .json files parsed")
+                    (length sidecars)
+                    (length jsons)
+
+  foldAsList (Turtle.ls mediaDir) >>= \originalMediaFiles -> do
+    moveResults <- fmap (length . filter (== True)) $
+                   forConcurrentlyN 10 sidecars $
+                   renameMoveFile originalMediaFiles
+    when (moveResults > 0) $
+      $logInfo $ format ("Renamed " % d % " files") moveResults
+
   mediaFiles <- foldAsList $ Turtle.ls mediaDir
-  res        <- forConcurrentlyN 5 (catMaybes jsons) $ \sc -> (sc, ) <$> do
-    case findFile mediaFiles sc of
-      Nothing -> return $ Just FileNotFound
-      Just f  -> embedSidecar sc f >>= \case
-        Just err -> return $ Just $ Exiv2Failure err
-        Nothing  -> return Nothing
-  print $ filter (isJust . snd) res
+  res        <- forConcurrently sidecars $ \sc ->
+    return $ case findFile mediaFiles sc of
+      Nothing -> Left FileNotFound
+      Just f  -> Right (f, makeExiftoolTags sc f)
+
+  $logInfo $ format
+    ("Media files not found for " % d % " sidecars")
+    (length $ lefts res)
+
+  $logInfo $ format ("Writing tags for " % d % " files") (length $ rights res)
+  liftIO $ runManaged $ do
+    (fp, tf) <- mktemp "." "exiftool.json"
+    P.hPut tf $ toStrict $ encode $ map snd $ rights res
+    sh $ inproc "exiftool"
+      (["-j+=" <> showF fp] <> exiftoolOptions <> ["-@", "-"])
+      (select $ mapMaybe (textToLine . showF . fst) $ rights res)
