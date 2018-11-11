@@ -25,8 +25,9 @@ import qualified Control.Foldl                 as Fold
 import qualified Data.Text                     as T
 
 data Options = Options
-  { metaDir  :: FilePath
-  , mediaDir :: FilePath
+  { metaDir    :: FilePath
+  , mediaDir   :: FilePath
+  , maxThreads :: Int
   }
 
 newtype FlickrUTCTime = FlickrUTCTime { unwrap :: UTCTime }
@@ -108,6 +109,7 @@ optParser =
   Options
     <$> argPath "meta"  "Directory containing photo_*.json files"
     <*> argPath "media" "Directory with media files"
+    <*> (optInt "threads" 't' "Maximum number of threads for I/O-bound operations" <|> pure 10)
 
 parseSidecar :: MonadIO m => FilePath -> m (Maybe PhotoMeta)
 parseSidecar jf = do
@@ -177,7 +179,6 @@ exiftoolOptions =
 
 main :: IO ()
 main = runStdoutLoggingT $ do
-  let maxThreads = 10
   Options {..} <- options "Process Flickr takeaway files" optParser
   jsons        <- foldAsList
     $ Turtle.find (contains "photo_" *> suffix ".json") metaDir
