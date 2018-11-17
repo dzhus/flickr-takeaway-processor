@@ -172,7 +172,8 @@ makeExiftoolTags PhotoMeta {..} =
       date_taken
     -- "ExifTool is very flexible about the input format when writing
     -- lat/long coordinates, and will accept .. floating point numbers"
-    geoTags Geo {..} = map (\(k, v) -> (k, tshow v))
+    geoTags Geo {..} =
+      concatMap (\(k, v) -> [(k, tshow v), ("xmp-exif:" <> k, tshow v)])
       -- "ExifTool will also accept a number when writing
       -- GPSLatitudeRef, positive for north latitudes or negative for
       -- south"
@@ -233,25 +234,26 @@ main = runStdoutLoggingT $ do
 
   $logInfo $ format ("Writing tags for " % d % " files") (length $ rights res)
 
-  results <- fmap concat $ forConcurrentlyN maxThreads res $ \exiftoolBatch ->
-    -- For some reason exiftool can't process JSON when SourceFile
-    -- field refers to a file with a space in the path, so we'll do
-    -- all files one by one, passing all tags and target file via
-    -- command arguments.
-    foldAsList $ forM exiftoolBatch $ \(f, tags) -> do
-    (ex, stdOutput, errOutput) <- procStrictWithErr
-      "exiftool"
-      (formatExiftoolTags tags <> exiftoolOptions <> [showF f])
-      empty
-    case ex of
-      ExitSuccess -> return $ Right (f, stdOutput)
-      ExitFailure _ -> return $ Left (f, errOutput)
+  results <- fmap concat $ forConcurrentlyN maxThreads res $
+    \exiftoolBatch ->
+      -- For some reason exiftool can't process JSON when SourceFile
+      -- field refers to a file with a space in the path, so we'll do
+      -- all files one by one, passing all tags and target file via
+      -- command arguments.
+      foldAsList $ forM exiftoolBatch $ \(f, tags) -> do
+      (ex, stdOutput, errOutput) <- procStrictWithErr
+        "exiftool"
+        (formatExiftoolTags tags <> exiftoolOptions <> [showF f])
+        empty
+      return $ case ex of
+        ExitFailure _ -> Left (f, errOutput)
+        ExitSuccess   -> Right (f, stdOutput)
 
-  $logInfo $
-    format
+  $logInfo $ format
     ("Exiftool sucessfully ran for " % d % " files")
     (length $ rights results)
 
   let errors = lefts results
-  unless (null errors) $
+  unless (null errors) $ do
+    forM_ errors print
     $logError $ format (d % " errors occured") (length errors)
