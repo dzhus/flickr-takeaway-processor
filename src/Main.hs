@@ -163,18 +163,29 @@ renameFile mediaFiles pm@PhotoMeta {..} = case findFile mediaFiles pm of
     _ -> return Nothing
 
 makeExiftoolTags :: PhotoMeta -> FilePath -> Map Text Text
-makeExiftoolTags PhotoMeta {..} photoPath = mapFromList
+makeExiftoolTags PhotoMeta {..} photoPath = mapFromList $
   [ ("ImageDescription", T.strip description)
   , ("Headline"        , T.strip name)
   , ("DateTimeOriginal", timestamp)
   , ("SourceFile"      , showF photoPath)
   , ("CodedCharacterSet", "UTF-8")
-  ]
- where
-  timestamp =
-    pack
+  ] <>
+  maybe [] geoTags geo
+  where
+    timestamp = pack
       $ formatTime defaultTimeLocale (iso8601DateFormat $ Just "%H:%M:%S")
       $ unwrap date_taken
+    -- "ExifTool is very flexible about the input format when writing
+    -- lat/long coordinates, and will accept .. floating point numbers"
+    geoTags Geo {..} = map (\(k, v) -> (k, tshow v))
+      -- "ExifTool will also accept a number when writing
+      -- GPSLatitudeRef, positive for north latitudes or negative for
+      -- south"
+      [ ("GPSLatitudeRef",  latitude)
+      , ("GPSLatitude",     latitude)
+      , ("GPSLongitudeRef", longitude)
+      , ("GPSLongitude",    longitude)
+      ]
 
 data ProcessingError = FileNotFound
                      | Exiv2Failure Int
