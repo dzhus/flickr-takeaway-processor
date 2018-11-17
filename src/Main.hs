@@ -15,6 +15,7 @@ import           Data.Aeson                    as A
 
 import           Data.List.Split
 import           Data.Time.Format
+import           Data.Time.LocalTime
 import           Data.Text.Read
 import           Turtle                  hiding ( f
                                                 , fp
@@ -29,16 +30,6 @@ data Options = Options
   , mediaDir   :: FilePath
   , maxThreads :: Int
   }
-
-newtype FlickrUTCTime = FlickrUTCTime { unwrap :: UTCTime }
-  deriving Show
-
-instance FromJSON FlickrUTCTime where
-  parseJSON =
-    withText "FlickrUTCTime" $
-    fmap FlickrUTCTime . parseJSON . String .
-    -- Flickr sidecars contain no T separator and no timezone
-    T.replace " " "T" . (<> "Z")
 
 data Geo = Geo
   { latitude  :: Float
@@ -82,7 +73,7 @@ instance FromJSON Privacy where
 -- | Flickr sidecar JSON structure.
 data PhotoMeta = PhotoMeta
   { id          :: Text
-  , date_taken  :: FlickrUTCTime
+  , date_taken  :: LocalTime
   , description :: Text
   , name        :: Text
   , geo         :: Maybe Geo
@@ -173,9 +164,9 @@ makeExiftoolTags PhotoMeta {..} photoPath = mapFromList $
   ] <>
   maybe [] geoTags geo
   where
-    timestamp = pack
-      $ formatTime defaultTimeLocale (iso8601DateFormat $ Just "%H:%M:%S")
-      $ unwrap date_taken
+    timestamp = pack $
+      formatTime defaultTimeLocale (iso8601DateFormat $ Just "%H:%M:%S")
+      date_taken
     -- "ExifTool is very flexible about the input format when writing
     -- lat/long coordinates, and will accept .. floating point numbers"
     geoTags Geo {..} = map (\(k, v) -> (k, tshow v))
