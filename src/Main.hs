@@ -13,7 +13,6 @@ import           Control.Monad.Logger
 import           Data.Aeson                    as A
                                          hiding ( Options )
 
-import           Data.List.Split
 import           Data.Time.Format
 import           Data.Time.LocalTime
 import           Data.Text.Read
@@ -153,12 +152,11 @@ renameFile mediaFiles pm@PhotoMeta {..} = case findFile mediaFiles pm of
       return $ Just newPath
     _ -> return Nothing
 
-makeExiftoolTags :: PhotoMeta -> FilePath -> Map Text Text
-makeExiftoolTags PhotoMeta {..} photoPath = mapFromList $
+makeExiftoolTags :: PhotoMeta -> [(Text, Text)]
+makeExiftoolTags PhotoMeta {..} =
   [ ("ImageDescription", T.strip description)
   , ("Headline"        , T.strip name)
   , ("DateTimeOriginal", timestamp)
-  , ("SourceFile"      , showF photoPath)
   , ("CodedCharacterSet", "UTF-8")
   ] <>
   maybe [] geoTags geo
@@ -178,9 +176,12 @@ makeExiftoolTags PhotoMeta {..} photoPath = mapFromList $
       , ("GPSLongitude",    longitude)
       ]
 
-data ProcessingError = FileNotFound
-                     | Exiv2Failure Int
-                     deriving Show
+-- | Product a list of exiftool command arguments.
+--
+-- Apparently we don't need to bother with quotes if we don't use any
+-- shell ('procStrictWithErr').
+formatExiftoolTags :: [(Text, Text)] -> [Text]
+formatExiftoolTags = map (\(k, v) -> "-" <> k <> "=" <> v)
 
 exiftoolOptions :: [Text]
 exiftoolOptions =
@@ -214,19 +215,35 @@ main = runStdoutLoggingT $ do
   mediaFiles <- foldAsList $ Turtle.lsdepth 1 2 mediaDir
   res        <- forConcurrently sidecars $ \sc ->
     return $ case findFile mediaFiles sc of
-      Nothing -> Left FileNotFound
-      Just f  -> Right (f, makeExiftoolTags sc f)
+      Nothing -> Left sc
+      Just f  -> Right (f, makeExiftoolTags sc)
 
-  $logInfo $ format
+  unless (null $ lefts res) $
+    $logInfo $ format
     ("Media files not found for " % d % " sidecars")
     (length $ lefts res)
 
   $logInfo $ format ("Writing tags for " % d % " files") (length $ rights res)
-  let splitRes = chunksOf (length (rights res) `div` maxThreads) (rights res)
-  void $ forConcurrentlyN maxThreads splitRes $ \exiftoolBatch ->
-    liftIO $ runManaged $ do
-      (fp, tf) <- mktemp "." "exiftool.json"
-      P.hPut tf $ toStrict $ encode $ map snd exiftoolBatch
-      sh $ inproc "exiftool"
-        (["-j+=" <> showF fp] <> exiftoolOptions <> ["-@", "-"])
-        (select $ mapMaybe (textToLine . showF . fst) exiftoolBatch)
+
+  results <- fmap concat $ forConcurrentlyN maxThreads res $ \exiftoolBatch ->
+    -- For some reason exiftool can't process JSON when SourceFile
+    -- field refers to a file with a space in the path, so we'll do
+    -- all files one by one, passing all tags and target file via
+    -- command arguments.
+    foldAsList $ forM exiftoolBatch $ \(f, tags) -> do
+    (ex, stdOutput, errOutput) <- procStrictWithErr
+      "exiftool"
+      (formatExiftoolTags tags <> exiftoolOptions <> [showF f])
+      empty
+    case ex of
+      ExitSuccess -> return $ Right (f, stdOutput)
+      ExitFailure _ -> return $ Left (f, errOutput)
+
+  $logInfo $
+    format
+    ("Exiftool sucessfully ran for " % d % " files")
+    (length $ rights results)
+
+  let errors = lefts results
+  unless (null errors) $
+    $logError $ format (d % " errors occured") (length errors)
