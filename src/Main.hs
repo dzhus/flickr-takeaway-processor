@@ -1,5 +1,6 @@
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections   #-}
+{-# LANGUAGE TypeFamilies    #-}
 
 module Main where
 
@@ -44,7 +45,7 @@ instance FromJSON Geo where
                    Right (num, _) -> return $ num / 1e6
                    _              -> fail "Could not read Geo components"
 
-newtype Tag = Tag Text
+newtype Tag = Tag { unTag :: Text }
   deriving Show
 
 instance FromJSON Tag where
@@ -154,15 +155,20 @@ renameFile mediaFiles pm@PhotoMeta {..} = case findFile mediaFiles pm of
 
 makeExiftoolTags :: PhotoMeta -> [(Text, Text)]
 makeExiftoolTags PhotoMeta {..} =
-  [ ("ImageDescription", T.strip description)
-  , ("Headline"        , T.strip name)
-  , ("DateTimeOriginal", timestamp)
-  , ("CodedCharacterSet", "UTF-8")
+  [ ("ImageDescription"         , T.strip description)
+  , ("xmp-dc:Description"       , T.strip description)
+  , ("Headline"                 , T.strip name)
+  , ("xmp-dc:Title"             , T.strip name)
+  , ("DateTimeOriginal"         , timestamp $ Just "%H:%M:%S")
+  , ("xmp-exif:DateTimeOriginal", timestamp $ Just "%H:%M:%S")
+  , ("xmp-dc:Date"              , timestamp Nothing)
+  , ("CodedCharacterSet"        , "UTF-8")
   ] <>
+  map (("keywords",) . unTag) tags <>
   maybe [] geoTags geo
   where
-    timestamp = pack $
-      formatTime defaultTimeLocale (iso8601DateFormat $ Just "%H:%M:%S")
+    timestamp fmt = pack $
+      formatTime defaultTimeLocale (iso8601DateFormat fmt)
       date_taken
     -- "ExifTool is very flexible about the input format when writing
     -- lat/long coordinates, and will accept .. floating point numbers"
@@ -181,7 +187,9 @@ makeExiftoolTags PhotoMeta {..} =
 -- Apparently we don't need to bother with quotes if we don't use any
 -- shell ('procStrictWithErr').
 formatExiftoolTags :: [(Text, Text)] -> [Text]
-formatExiftoolTags = map (\(k, v) -> "-" <> k <> "=" <> v)
+formatExiftoolTags =
+  map (\(k, v) -> "-" <> k <> "=" <> v) .
+  filter (not . null . snd)
 
 exiftoolOptions :: [Text]
 exiftoolOptions =
