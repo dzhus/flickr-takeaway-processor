@@ -18,7 +18,6 @@ import           Data.Time.Format
 import           Data.Time.LocalTime
 import           Data.Text.Read
 import           Turtle                  hiding ( f
-                                                , fp
                                                 , o
                                                 )
 
@@ -119,22 +118,22 @@ findFile mediaFiles PhotoMeta {..} =
 
 -- | Produce an album-derived path for the file.
 albumFilename :: PhotoMeta -> FilePath -> Maybe FilePath
-albumFilename PhotoMeta {..} fp =
+albumFilename PhotoMeta {..} path =
   case headMay albums of
     Just (Album a) ->
-      if fromText a `elem` splitDirectories fp
+      if fromText a `elem` splitDirectories path
       then Nothing
-      else Just $ directory fp <> fromText a <> filename fp
+      else Just $ directory path <> fromText a <> filename path
     Nothing -> Nothing
 
 -- | If the file name has a leading dash, produce a new one.
 fixedFilename :: PhotoMeta -> FilePath -> Maybe FilePath
-fixedFilename sc fp = case unpack $ showF fp of
+fixedFilename sc path = case unpack $ showF path of
   '-' : _ ->
     albumFilename sc newName <|> Just newName
     where
-      newName = fromText $ "photo" <> T.dropWhile (== '-') (showF fp)
-  _ -> albumFilename sc fp
+      newName = fromText $ "photo" <> T.dropWhile (== '-') (showF path)
+  _ -> albumFilename sc path
 
 -- | Move/rename the photo if needed and return new path.
 renameFile
