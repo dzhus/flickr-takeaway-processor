@@ -126,6 +126,7 @@ findFile mediaFiles PhotoMeta {..} =
   P.find (((id <> "_o") `isInfixOf`) . showF) mediaFiles <|>
   P.find           ((id `isInfixOf`) . showF) mediaFiles
 
+-- | Produce an album-derived path for the file.
 albumFilename :: PhotoMeta -> FilePath -> Maybe FilePath
 albumFilename PhotoMeta {..} fp =
   case headMay albums of
@@ -210,6 +211,7 @@ main = runStdoutLoggingT $ do
                     (length sidecars)
                     (length jsons)
 
+  -- Rename files first
   foldAsList (Turtle.ls mediaDir) >>= \originalMediaFiles -> do
     moveResults <- fmap (length . filter isJust) $
                    forConcurrentlyN maxThreads sidecars $
