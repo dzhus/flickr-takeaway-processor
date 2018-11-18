@@ -1,4 +1,3 @@
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections   #-}
 {-# LANGUAGE TypeFamilies    #-}
 
@@ -147,7 +146,7 @@ renameFile mediaFiles pm@PhotoMeta {..} = case findFile mediaFiles pm of
   Just sth -> case fixedFilename pm $ filename sth of
     Just newFilename -> do
       let newPath = directory sth <> newFilename
-      $logDebug $ "Moving " <> showF sth <> " to " <> showF newPath
+      logDebugN $ "Moving " <> showF sth <> " to " <> showF newPath
       mktree (directory newPath)
       mv sth newPath
       return $ Just newPath
@@ -207,7 +206,7 @@ main = runStdoutLoggingT $ do
   jsons        <- foldAsList
     $ Turtle.find (contains "photo_" *> suffix ".json") metaDir
   sidecars <- catMaybes <$> forConcurrentlyN maxThreads jsons parseSidecar
-  $logInfo $ format (d % "/" % d % " sidecar .json files parsed")
+  logInfoN $ format (d % "/" % d % " sidecar .json files parsed")
                     (length sidecars)
                     (length jsons)
 
@@ -217,7 +216,7 @@ main = runStdoutLoggingT $ do
                    forConcurrentlyN maxThreads sidecars $
                    renameFile originalMediaFiles
     when (moveResults > 0) $
-      $logInfo $ format ("Renamed " % d % " files") moveResults
+      logInfoN $ format ("Renamed " % d % " files") moveResults
 
   -- Include files which may have been moved to album subdirectories
   -- already
@@ -228,11 +227,11 @@ main = runStdoutLoggingT $ do
       Just f  -> Right (f, makeExiftoolTags sc)
 
   unless (null $ lefts tasks) $
-    $logInfo $ format
+    logInfoN $ format
     ("Media files not found for " % d % " sidecars")
     (length $ lefts tasks)
 
-  $logInfo $ format ("Writing tags for " % d % " files") (length $ rights tasks)
+  logInfoN $ format ("Writing tags for " % d % " files") (length $ rights tasks)
 
   results <- fmap concat $ forConcurrentlyN maxThreads (rights tasks) $
     \(f, tags) ->
@@ -249,15 +248,18 @@ main = runStdoutLoggingT $ do
         ExitSuccess   -> Right (f, errOutput)
         ExitFailure _ -> Left (f, errOutput)
 
-  $logInfo $ format
+  forM_ (rights results) $ \(f, errOutput) ->
+    when ("warning" `isInfixOf` T.toLower errOutput) $
+    logWarnN $ format ("Warnings for " % fp % ": " % s) f errOutput
+
+  let errors = lefts results
+
+  forM_ errors $ \(f, errOutput) ->
+    logErrorN $ format ("Errors for " % fp % ": " % s) f errOutput
+
+  logInfoN $ format
     ("Exiftool sucessfully ran for " % d % " files")
     (length $ rights results)
 
-  forM_ (rights results) $ \(f, errOutput) ->
-    when ("warning" `isInfixOf` T.toLower errOutput) $
-    $logWarn $ format ("Warnings for " % fp % ": " % s) f errOutput
-
-  let errors = lefts results
-  unless (null errors) $ do
-    forM_ errors print
-    $logError $ format (d % " errors occured") (length errors)
+  unless (null errors) $
+    logErrorN $ format (d % " errors occured") (length errors)
