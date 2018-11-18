@@ -188,9 +188,7 @@ makeExiftoolTags PhotoMeta {..} =
 -- Apparently we don't need to bother with quotes if we don't use any
 -- shell ('procStrictWithErr').
 formatExiftoolTags :: [(Text, Text)] -> [Text]
-formatExiftoolTags =
-  map (\(k, v) -> "-" <> k <> "=" <> v) .
-  filter (not . null . snd)
+formatExiftoolTags = map (\(k, v) -> "-" <> k <> "=" <> v)
 
 exiftoolOptions :: [Text]
 exiftoolOptions =
