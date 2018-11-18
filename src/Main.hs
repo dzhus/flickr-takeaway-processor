@@ -220,25 +220,25 @@ main = runStdoutLoggingT $ do
   -- Include files which may have been moved to album subdirectories
   -- already
   mediaFiles <- foldAsList $ Turtle.lsdepth 1 2 mediaDir
-  res        <- forConcurrently sidecars $ \sc ->
+  tasks      <- forConcurrently sidecars $ \sc ->
     return $ case findFile mediaFiles sc of
       Nothing -> Left sc
       Just f  -> Right (f, makeExiftoolTags sc)
 
-  unless (null $ lefts res) $
+  unless (null $ lefts tasks) $
     $logInfo $ format
     ("Media files not found for " % d % " sidecars")
-    (length $ lefts res)
+    (length $ lefts tasks)
 
-  $logInfo $ format ("Writing tags for " % d % " files") (length $ rights res)
+  $logInfo $ format ("Writing tags for " % d % " files") (length $ rights tasks)
 
-  results <- fmap concat $ forConcurrentlyN maxThreads res $
-    \exiftoolBatch ->
+  results <- fmap concat $ forConcurrentlyN maxThreads (rights tasks) $
+    \(f, tags) ->
       -- For some reason exiftool can't process JSON when SourceFile
       -- field refers to a file with a space in the path, so we'll do
       -- all files one by one, passing all tags and target file via
       -- command arguments.
-      foldAsList $ forM exiftoolBatch $ \(f, tags) -> do
+      foldAsList $ do
       (ex, stdOutput, errOutput) <- procStrictWithErr
         "exiftool"
         (formatExiftoolTags tags <> exiftoolOptions <> [showF f])
