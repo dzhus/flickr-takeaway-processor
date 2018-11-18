@@ -239,17 +239,21 @@ main = runStdoutLoggingT $ do
       -- all files one by one, passing all tags and target file via
       -- command arguments.
       foldAsList $ do
-      (ex, stdOutput, errOutput) <- procStrictWithErr
+      (ex, _, errOutput) <- procStrictWithErr
         "exiftool"
         (formatExiftoolTags tags <> exiftoolOptions <> [showF f])
         empty
       return $ case ex of
+        ExitSuccess   -> Right (f, errOutput)
         ExitFailure _ -> Left (f, errOutput)
-        ExitSuccess   -> Right (f, stdOutput)
 
   $logInfo $ format
     ("Exiftool sucessfully ran for " % d % " files")
     (length $ rights results)
+
+  forM_ (rights results) $ \(f, errOutput) ->
+    when ("warning" `isInfixOf` T.toLower errOutput) $
+    $logWarn $ format ("Warnings for " % fp % ": " % s) f errOutput
 
   let errors = lefts results
   unless (null errors) $ do
