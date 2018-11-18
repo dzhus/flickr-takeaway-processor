@@ -176,10 +176,10 @@ makeExiftoolTags PhotoMeta {..} =
       -- "ExifTool will also accept a number when writing
       -- GPSLatitudeRef, positive for north latitudes or negative for
       -- south"
-      [ ("GPSLatitudeRef"       , latitude)
+      [ ("GPSLatitudeRef"       , if latitude >= 0 then 1 else -1)
       , ("GPSLatitude"          , latitude)
       , ("xmp-exif:GPSLatitude" , latitude)
-      , ("GPSLongitudeRef"      , longitude)
+      , ("GPSLongitudeRef"      , if longitude >= 0 then 1 else -1)
       , ("GPSLongitude"         , longitude)
       , ("xmp-exif:GPSLongitude", longitude)
       ]
