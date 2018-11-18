@@ -245,8 +245,8 @@ main = runStdoutLoggingT $ do
         (formatExiftoolTags tags <> exiftoolOptions <> [showF f])
         empty
       return $ case ex of
-        ExitSuccess   -> Right (f, errOutput)
-        ExitFailure _ -> Left (f, errOutput)
+        ExitSuccess   -> Right (f, T.strip errOutput)
+        ExitFailure _ -> Left (f, T.strip errOutput)
 
   forM_ (rights results) $ \(f, errOutput) ->
     when ("warning" `isInfixOf` T.toLower errOutput) $
