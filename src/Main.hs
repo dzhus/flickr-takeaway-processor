@@ -173,14 +173,16 @@ makeExiftoolTags PhotoMeta {..} =
     -- "ExifTool is very flexible about the input format when writing
     -- lat/long coordinates, and will accept .. floating point numbers"
     geoTags Geo {..} =
-      concatMap (\(k, v) -> [(k, tshow v), ("xmp-exif:" <> k, tshow v)])
+      map (\(k, v) -> (k, tshow v))
       -- "ExifTool will also accept a number when writing
       -- GPSLatitudeRef, positive for north latitudes or negative for
       -- south"
-      [ ("GPSLatitudeRef",  latitude)
-      , ("GPSLatitude",     latitude)
-      , ("GPSLongitudeRef", longitude)
-      , ("GPSLongitude",    longitude)
+      [ ("GPSLatitudeRef"       , latitude)
+      , ("GPSLatitude"          , latitude)
+      , ("xmp-exif:GPSLatitude" , latitude)
+      , ("GPSLongitudeRef"      , longitude)
+      , ("GPSLongitude"         , longitude)
+      , ("xmp-exif:GPSLongitude", longitude)
       ]
 
 -- | Product a list of exiftool command arguments.
