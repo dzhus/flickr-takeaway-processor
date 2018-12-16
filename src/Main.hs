@@ -241,9 +241,10 @@ main = runStdoutLoggingT $ do
       Just f  -> Right (f, makeExiftoolTags sc)
 
   unless (null $ lefts tasks) $
-    logInfoN $ format
-    ("Media files not found for " % d % " sidecars")
+    logErrorN $ format
+    ("Media files not found for " % d % " sidecars: " % s)
     (length $ lefts tasks)
+    (tshow $ map id $ lefts tasks)
 
   logInfoN $ format ("Writing tags for " % d % " files") (length $ rights tasks)
 
