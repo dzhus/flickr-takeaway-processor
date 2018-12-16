@@ -1,14 +1,16 @@
 # flickr-takeaway-processor
 
-Embed Flickr metadata back into media files.
+Embed Flickr metadata back into your media file EXIF tags.
 
 The following tags are populated:
 
-| Flickr tag  | Exif/IPTC tag      |
-|-------------|--------------------|
-| Photo title | `Headline`         |
-| Description | `ImageDescription` |
-| Date taken  | `DateTimeOriginal` |
+| Flickr metadata | [Exif/IPTC/XMP][tags] tag                     |
+|-----------------|-----------------------------------------------|
+| Photo title     | `Headline`, `xmp-dc:Title`                    |
+| Description     | `ImageDescription`, `xmp-dc:ImageDescription` |
+| Date taken      | `DateTimeOriginal`                            |
+| Geotag          | `GPSLatitude`, `GPSLongitude`                 |
+| Tags            | `Keywords`                                    |
 
 ## Build & install
 
@@ -18,11 +20,15 @@ Use <http://haskellstack.org>:
 stack install
 ```
 
-The tool needs `exiftool` to run.
+`flickr-takeaway-processor` also requires [`exiftool`][exiftool] to
+run.
 
 ## Use
 
-1. Unpack Flickr takeaway archives:
+1. Request your Flickr data from the [account settings
+   page](https://www.flickr.com/account).
+
+2. Unpack Flickr takeaway archives:
 
     - media files (`data_*_*_*.zip`) to `media/`
 
@@ -33,3 +39,6 @@ The tool needs `exiftool` to run.
     ```
     flickr-takeway-processor media/ meta/
     ```
+
+[exiftool]: https://sno.phy.queensu.ca/~phil/exiftool/
+[tags]: https://sno.phy.queensu.ca/~phil/exiftool/TagNames/
