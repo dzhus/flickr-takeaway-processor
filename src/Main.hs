@@ -20,6 +20,10 @@ import           Turtle                  hiding ( f
                                                 , o
                                                 )
 
+import           Filesystem.Path                ( extensions
+                                                , replaceExtensions
+                                                )
+
 import qualified Control.Foldl                 as Fold
 import qualified Data.Text                     as T
 
@@ -115,24 +119,30 @@ findFile mediaFiles PhotoMeta {..} =
   P.find (((id <> "_o") `isInfixOf`) . showF) mediaFiles <|>
   P.find           ((id `isInfixOf`) . showF) mediaFiles
 
+-- | Produce an privacy-derived path for the file.
+privateFilename :: PhotoMeta -> FilePath -> FilePath
+privateFilename PhotoMeta {..} path =
+  case (privacy, "private" `elem` exts) of
+    (Private, False) -> replaceExtensions path ("private":exts)
+    _                -> path
+    where
+      exts = extensions path
+
 -- | Produce an album-derived path for the file.
-albumFilename :: PhotoMeta -> FilePath -> Maybe FilePath
+albumFilename :: PhotoMeta -> FilePath -> FilePath
 albumFilename PhotoMeta {..} path =
   case headMay albums of
     Just (Album a) ->
-      if fromText a `elem` splitDirectories path
-      then Nothing
-      else Just $ directory path <> fromText a <> filename path
-    Nothing -> Nothing
+      if fromText a `elem` map dirname (splitDirectories path)
+      then path
+      else directory path <> fromText a <> filename path
+    Nothing -> path
 
 -- | If the file name has a leading dash, produce a new one.
-fixedFilename :: PhotoMeta -> FilePath -> Maybe FilePath
-fixedFilename sc path = case unpack $ showF path of
-  '-' : _ ->
-    albumFilename sc newName <|> Just newName
-    where
-      newName = fromText $ "photo" <> T.dropWhile (== '-') (showF path)
-  _ -> albumFilename sc path
+fixedFilename :: FilePath -> FilePath
+fixedFilename path = case unpack $ showF (filename path) of
+  '-' : fileSuffix -> directory path <> fromText ("photo" <> pack fileSuffix)
+  _                -> path
 
 -- | Move/rename the photo if needed and return new path.
 renameFile
@@ -143,14 +153,18 @@ renameFile
   -> m (Maybe FilePath)
 renameFile mediaFiles pm@PhotoMeta {..} = case findFile mediaFiles pm of
   Nothing  -> return Nothing
-  Just sth -> case fixedFilename pm $ filename sth of
-    Just newFilename -> do
-      let newPath = directory sth <> newFilename
-      logDebugN $ "Moving " <> showF sth <> " to " <> showF newPath
-      mktree (directory newPath)
-      mv sth newPath
-      return $ Just newPath
-    _ -> return Nothing
+  Just path ->
+    let
+      targetPath = privateFilename pm $ albumFilename pm $ fixedFilename path
+    in
+      if targetPath /= path
+      then do
+        logDebugN $ "Moving " <> showF path <> " to " <> showF targetPath
+        mktree (directory targetPath)
+        mv path targetPath
+        return $ Just targetPath
+      else
+        return Nothing
 
 makeExiftoolTags :: PhotoMeta -> [(Text, Text)]
 makeExiftoolTags PhotoMeta {..} =
@@ -211,7 +225,7 @@ main = runStdoutLoggingT $ do
                     (length jsons)
 
   -- Rename files first
-  foldAsList (Turtle.ls mediaDir) >>= \originalMediaFiles -> do
+  foldAsList (Turtle.lsdepth 1 2 mediaDir) >>= \originalMediaFiles -> do
     moveResults <- fmap (length . filter isJust) $
                    forConcurrentlyN maxThreads sidecars $
                    renameFile originalMediaFiles

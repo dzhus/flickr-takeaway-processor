@@ -53,6 +53,15 @@ The following tags are populated:
 | Geotag          | `GPSLatitude`, `GPSLongitude`                 |
 | Tags            | `Keywords`                                    |
 
+### Rename private files
+
+Files with non-public privacy level on Flickr will have `.private`
+suffix added to their extension list, as in:
+
+```
+media/img_20150328_152050_22212850691_o.jpg → to media/img_20150328_152050_22212850691_o.private.jpg
+```
+
 ## Build & install
 
 Use <http://haskellstack.org>:
