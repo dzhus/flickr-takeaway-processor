@@ -15,15 +15,16 @@ with vendor-specific schema:
     "date_imported": "2015-12-13 05:57:41",
     "albums": [
         {
-            "url": "https://www.flickr.com/photos/nothingpersonal/sets/72157654596017442/"
-            "id": "72157654596017442",
-            ...
+            "url": "https://www.flickr.com/photos/nothingpersonal/sets/72157654596017442/",
+            "id": "72157654596017442"
         }
     ],
     "tags": [
         {
-            "tag": "Santacon",
-    ...
+            "tag": "Santacon"
+        }
+    ]
+}
 ```
 
 If you plan to move off Flickr, you may prefer a more portable format
