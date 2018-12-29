@@ -212,6 +212,7 @@ exiftoolOptions =
   , "-charset"
   , "iptc=UTF-8"
   , "-overwrite_original_in_place"
+  , "-ignoreMinorErrors"
   ]
 
 main :: IO ()
