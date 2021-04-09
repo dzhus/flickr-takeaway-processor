@@ -8,7 +8,7 @@ import           ClassyPrelude                 as P
                                                 , id
                                                 )
 
-import           Control.Concurrent.Async.Extra
+import           Control.Monad.Fail
 import           Control.Monad.Logger
 import           Data.Aeson                    as A
                                          hiding ( Options )
@@ -93,10 +93,6 @@ showF = pack . encodeString
 foldAsList :: MonadIO m => Shell a -> m [a]
 foldAsList act = Turtle.fold act Fold.list
 
-forConcurrentlyN
-  :: (MonadUnliftIO m, Traversable t) => Int -> t a -> (a -> m b) -> m (t b)
-forConcurrentlyN n inputs act = mapConcurrentlyBounded n act inputs
-
 optParser :: Parser Options
 optParser =
   Options
@@ -151,7 +147,7 @@ renameFile
   -- ^ List of files to look for the photo in.
   -> PhotoMeta
   -> m (Maybe FilePath)
-renameFile mediaFiles pm@PhotoMeta {..} = case findFile mediaFiles pm of
+renameFile mediaFiles pm = case findFile mediaFiles pm of
   Nothing  -> return Nothing
   Just path ->
     let
@@ -220,7 +216,7 @@ main = runStdoutLoggingT $ do
   Options {..} <- options "Process Flickr takeaway files" optParser
   jsons        <- foldAsList
     $ Turtle.find (contains "photo_" *> suffix ".json") metaDir
-  sidecars <- catMaybes <$> forConcurrentlyN maxThreads jsons parseSidecar
+  sidecars <- catMaybes <$> pooledForConcurrentlyN maxThreads jsons parseSidecar
   logInfoN $ format (d % "/" % d % " sidecar .json files parsed")
                     (length sidecars)
                     (length jsons)
@@ -228,7 +224,7 @@ main = runStdoutLoggingT $ do
   -- Rename files first
   foldAsList (Turtle.lsdepth 1 2 mediaDir) >>= \originalMediaFiles -> do
     moveResults <- fmap (length . filter isJust) $
-                   forConcurrentlyN maxThreads sidecars $
+                   pooledForConcurrentlyN maxThreads sidecars $
                    renameFile originalMediaFiles
     when (moveResults > 0) $
       logInfoN $ format ("Renamed " % d % " files") moveResults
@@ -245,11 +241,11 @@ main = runStdoutLoggingT $ do
     logErrorN $ format
     ("Media files not found for " % d % " sidecars: " % s)
     (length $ lefts tasks)
-    (tshow $ map id $ lefts tasks)
+    (tshow $ lefts tasks)
 
   logInfoN $ format ("Writing tags for " % d % " files") (length $ rights tasks)
 
-  results <- fmap concat $ forConcurrentlyN maxThreads (rights tasks) $
+  results <- fmap concat $ pooledForConcurrentlyN maxThreads (rights tasks) $
     \(f, tags) ->
       -- For some reason exiftool can't process JSON when SourceFile
       -- field refers to a file with a space in the path, so we'll do

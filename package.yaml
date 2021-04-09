@@ -26,7 +26,6 @@ ghc-options:
 dependencies:
   - base >= 4.7 && < 5
   - aeson
-  - async-extra
   - classy-prelude
   - foldl
   - monad-logger
@@ -35,6 +34,7 @@ dependencies:
   - text
   - time
   - turtle
+  - unliftio
 
 executables:
   flickr-takeaway-processor:
