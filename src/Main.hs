@@ -28,8 +28,8 @@ import qualified Control.Foldl                 as Fold
 import qualified Data.Text                     as T
 
 data Options = Options
-  { metaDir    :: FilePath
-  , mediaDir   :: FilePath
+  { mediaDir   :: FilePath
+  , metaDir    :: FilePath
   , maxThreads :: Int
   }
 
@@ -100,8 +100,8 @@ forConcurrentlyN n inputs act = mapConcurrentlyBounded n act inputs
 optParser :: Parser Options
 optParser =
   Options
-    <$> argPath "meta"  "Directory containing photo_*.json files"
-    <*> argPath "media" "Directory with media files"
+    <$> argPath "media" "Directory with media files"
+    <*> argPath "meta"  "Directory containing photo_*.json files"
     <*> (optInt "threads" 't' "Maximum number of threads for I/O-bound operations" <|> pure 10)
 
 parseSidecar :: MonadIO m => FilePath -> m (Maybe PhotoMeta)
