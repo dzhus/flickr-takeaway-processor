@@ -29,12 +29,10 @@ dependencies:
   - classy-prelude
   - foldl
   - monad-logger
-  - split
   - system-filepath
   - text
   - time
   - turtle
-  - unliftio
 
 executables:
   flickr-takeaway-processor:
