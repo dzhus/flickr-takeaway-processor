@@ -87,7 +87,7 @@ run.
 2. Run the tool
 
     ```
-    flickr-takeway-processor media/ meta/
+    flickr-takeaway-processor media/ meta/
     ```
 
 [exiftool]: https://sno.phy.queensu.ca/~phil/exiftool/
