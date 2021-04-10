@@ -78,7 +78,7 @@ data PhotoMeta = PhotoMeta
   , date_taken  :: LocalTime
   , description :: Text
   , name        :: Text
-  , geo         :: Maybe Geo
+  , geo         :: [Geo]
   , albums      :: [Album]
   , tags        :: [Tag]
   , privacy     :: Privacy
@@ -174,7 +174,7 @@ makeExiftoolTags PhotoMeta {..} =
   , ("CodedCharacterSet"        , "UTF-8")
   ] <>
   map (("keywords",) . unTag) tags <>
-  maybe [] geoTags geo
+  maybe [] geoTags (headMay geo)
   where
     timestamp fmt = pack $
       formatTime defaultTimeLocale (iso8601DateFormat fmt)
