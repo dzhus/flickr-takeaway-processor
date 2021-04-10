@@ -211,17 +211,15 @@ exiftoolOptions =
   , "-ignoreMinorErrors"
   ]
 
-mapLeft :: (a -> c) -> Either a b -> Either c b
-mapLeft _ (Right r) = Right r
-mapLeft f (Left r) = Left $ f r
-
 main :: IO ()
 main = runStdoutLoggingT $ do
   Options {..} <- options "Process Flickr takeaway files" optParser
   jsons        <- foldAsList
     $ Turtle.find (contains "photo_" *> suffix ".json") metaDir
   sidecars <- pooledForConcurrentlyN maxThreads jsons $
-    \sc -> mapLeft (sc,) <$> parseSidecar sc
+    \sc -> parseSidecar sc >>= \case
+      Right r -> return $ Right (sc, r)
+      Left er -> return $ Left (sc, er)
   let parsedSidecars = rights sidecars
   logInfoN $ format (d % "/" % d % " sidecar .json files parsed")
                     (length parsedSidecars)
@@ -235,25 +233,25 @@ main = runStdoutLoggingT $ do
 
   -- Rename files first
   foldAsList (Turtle.lsdepth 1 2 mediaDir) >>= \originalMediaFiles -> do
-    moveResults <- fmap (length . filter isJust) $
-                   pooledForConcurrentlyN maxThreads parsedSidecars $
-                   renameFile originalMediaFiles
+    moveResults <- length . filter isJust <$>
+                   pooledForConcurrentlyN maxThreads parsedSidecars
+                   (renameFile originalMediaFiles . snd)
     when (moveResults > 0) $
       logInfoN $ format ("Renamed " % d % " files") moveResults
 
   -- Include files which may have been moved to album subdirectories
   -- already
   mediaFiles <- foldAsList $ Turtle.lsdepth 1 2 mediaDir
-  tasks      <- forConcurrently parsedSidecars $ \sc ->
-    return $ case findFile mediaFiles sc of
-      Nothing -> Left sc
-      Just f  -> Right (f, makeExiftoolTags sc)
+  tasks      <- forConcurrently parsedSidecars $ \(sidecarPath, parsedInfo) ->
+    return $ case findFile mediaFiles parsedInfo of
+      Nothing -> Left sidecarPath
+      Just f  -> Right (f, makeExiftoolTags parsedInfo)
 
-  unless (null $ lefts tasks) $
-    logErrorN $ format
-    ("Media files not found for " % d % " sidecars: " % s)
-    (length $ lefts tasks)
-    (tshow $ lefts tasks)
+  let unmapped = lefts tasks
+  unless (null unmapped) $ do
+    logErrorN $ format ("Media files not found for " % d % " sidecars") (length unmapped)
+    forM_ unmapped $ \sidecarPath ->
+      logErrorN $ format ("No media file found for " % fp) sidecarPath
 
   logInfoN $ format ("Writing tags for " % d % " files") (length $ rights tasks)
 
