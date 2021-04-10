@@ -5,7 +5,7 @@ homepage:            https://github.com/dzhus/flickr-takeaway-processor#readme
 license:             BSD3
 author:              Dmitry Dzhus
 maintainer:          dima@dzhus.org
-copyright:           2018 Dmitry Dzhus
+copyright:           2018-2021 Dmitry Dzhus
 category:            Web
 extra-source-files:
 - README.md
