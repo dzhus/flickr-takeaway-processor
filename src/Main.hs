@@ -100,10 +100,10 @@ optParser =
     <*> argPath "meta"  "Directory containing photo_*.json files"
     <*> (optInt "threads" 't' "Maximum number of threads for I/O-bound operations" <|> pure 10)
 
-parseSidecar :: MonadIO m => FilePath -> m (Maybe PhotoMeta)
+parseSidecar :: MonadIO m => FilePath -> m (Either String PhotoMeta)
 parseSidecar jf = do
   res <- liftIO $ P.readFile $ encodeString jf
-  return $ decode $ fromStrict res
+  return $ eitherDecode $ fromStrict res
 
 -- | Return path to the photo file the sidecar corresponds to.
 findFile
@@ -211,20 +211,32 @@ exiftoolOptions =
   , "-ignoreMinorErrors"
   ]
 
+mapLeft :: (a -> c) -> Either a b -> Either c b
+mapLeft _ (Right r) = Right r
+mapLeft f (Left r) = Left $ f r
+
 main :: IO ()
 main = runStdoutLoggingT $ do
   Options {..} <- options "Process Flickr takeaway files" optParser
   jsons        <- foldAsList
     $ Turtle.find (contains "photo_" *> suffix ".json") metaDir
-  sidecars <- catMaybes <$> pooledForConcurrentlyN maxThreads jsons parseSidecar
+  sidecars <- pooledForConcurrentlyN maxThreads jsons $
+    \sc -> mapLeft (sc,) <$> parseSidecar sc
+  let parsedSidecars = rights sidecars
   logInfoN $ format (d % "/" % d % " sidecar .json files parsed")
-                    (length sidecars)
+                    (length parsedSidecars)
                     (length jsons)
+
+  let unparsed = lefts sidecars
+  unless (null unparsed) $ do
+    logErrorN $ format ("Could not parse " % d % " sidecar files") (length unparsed)
+    forM_ unparsed $ \(sidecarPath, parsingError) ->
+      logErrorN $ format ("Error parsing " % fp % ": " % s) sidecarPath (pack parsingError)
 
   -- Rename files first
   foldAsList (Turtle.lsdepth 1 2 mediaDir) >>= \originalMediaFiles -> do
     moveResults <- fmap (length . filter isJust) $
-                   pooledForConcurrentlyN maxThreads sidecars $
+                   pooledForConcurrentlyN maxThreads parsedSidecars $
                    renameFile originalMediaFiles
     when (moveResults > 0) $
       logInfoN $ format ("Renamed " % d % " files") moveResults
@@ -232,7 +244,7 @@ main = runStdoutLoggingT $ do
   -- Include files which may have been moved to album subdirectories
   -- already
   mediaFiles <- foldAsList $ Turtle.lsdepth 1 2 mediaDir
-  tasks      <- forConcurrently sidecars $ \sc ->
+  tasks      <- forConcurrently parsedSidecars $ \sc ->
     return $ case findFile mediaFiles sc of
       Nothing -> Left sc
       Just f  -> Right (f, makeExiftoolTags sc)
