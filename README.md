@@ -13,8 +13,10 @@ with vendor-specific schema:
     "description": "Look at all these lovely people",
     "date_taken": "2015-12-12 13:11:14",
     "date_imported": "2015-12-13 05:57:41",
+    "privacy": "public",
     "albums": [
         {
+            "title": "London Santacon 2015",
             "url": "https://www.flickr.com/photos/nothingpersonal/sets/72157654596017442/",
             "id": "72157654596017442"
         }
@@ -59,19 +61,13 @@ Files with non-public privacy level on Flickr will have `.private`
 suffix added to their extension list, as in:
 
 ```
-media/img_20150328_152050_22212850691_o.jpg → to media/img_20150328_152050_22212850691_o.private.jpg
+media/img_20150328_152050_22212850691_o.jpg → media/img_20150328_152050_22212850691_o.private.jpg
 ```
 
-## Build & install
+## Requirements
 
-Use <http://haskellstack.org>:
-
-```
-stack install
-```
-
-`flickr-takeaway-processor` also requires [`exiftool`][exiftool] to
-run.
+- Python 3.9 or newer (stdlib only; no extra packages)
+- [`exiftool`][exiftool] on your `PATH`
 
 ## Use
 
@@ -84,11 +80,19 @@ run.
 
     - sidecar JSONs (`*_*_part*.zip`) to `meta/`
 
-2. Run the tool
+3. Run the tool:
 
     ```
-    flickr-takeaway-processor media/ meta/
+    python3 flickr_takeaway_processor.py media/ meta/
     ```
+
+    Optional: limit concurrency with `-t` / `--threads` (default is 10), for example:
+
+    ```
+    python3 flickr_takeaway_processor.py media/ meta/ -t 4
+    ```
+
+    You can also mark the script executable (`chmod +x flickr_takeaway_processor.py`) and run `./flickr_takeaway_processor.py media/ meta/`.
 
 [exiftool]: https://sno.phy.queensu.ca/~phil/exiftool/
 [tags]: https://sno.phy.queensu.ca/~phil/exiftool/TagNames/

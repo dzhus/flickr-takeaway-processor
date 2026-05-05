@@ -7,29 +7,17 @@ jobs:
   build:
     name: CI
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        stack_yaml: ['stack.yaml']
     steps:
-      - name: Setup Stack
-        uses: haskell/actions/setup@v1
-        with:
-          enable-stack: true
-          stack-version: 'latest'
+      - name: Checkout project
+        uses: actions/checkout@v4
 
-      - name: Clone project
-        uses: actions/checkout@v2
-
-      - name: Cache dependencies
-        uses: actions/cache@v1
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          path: ~/.stack
-          key: ${{ runner.os }}-${{ matrix.stack_yaml }}-${{ hashFiles(matrix.stack_yaml) }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.stack_yaml }}-
-            ${{ runner.os }}-
-      - name: HLint
-        run: 'curl -sL https://raw.github.com/ndmitchell/hlint/master/misc/travis.sh | sh -s .'
-      - name: Build and run tests
-        run: 'stack build --fast --no-terminal --stack-yaml=${{ matrix.stack_yaml }} --pedantic --haddock --no-haddock-deps --test --bench --no-run-benchmarks'
+          python-version: '3.x'
+
+      - name: Install exiftool
+        run: sudo apt-get update && sudo apt-get install -y exiftool
+
+      - name: Validate script syntax
+        run: python3 -m py_compile flickr_takeaway_processor.py
