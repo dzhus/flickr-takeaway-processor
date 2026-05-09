@@ -50,7 +50,7 @@ The following tags are populated:
 | Flickr metadata | [Exif/IPTC/XMP][tags] tag                     |
 |-----------------|-----------------------------------------------|
 | Photo title     | `Headline`, `xmp-dc:Title`                    |
-| Description     | `ImageDescription`, `xmp-dc:ImageDescription` |
+| Description     | `ImageDescription`, `xmp-dc:Description` |
 | Date taken      | `DateTimeOriginal`                            |
 | Geotag          | `GPSLatitude`, `GPSLongitude`                 |
 | Tags            | `Keywords`                                    |

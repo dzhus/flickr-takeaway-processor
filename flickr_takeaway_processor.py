@@ -237,7 +237,7 @@ def make_exiftool_tags(pm: PhotoMeta) -> list[tuple[str, str]]:
     dt = pm.date_taken
     rows: list[tuple[str, str]] = [
         ("ImageDescription", desc),
-        ("xmp-dc:ImageDescription", desc),
+        ("xmp-dc:Description", desc),
         ("Headline", title),
         ("xmp-dc:Title", title),
         ("DateTimeOriginal", _timestamp(dt, True)),
